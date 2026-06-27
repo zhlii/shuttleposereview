@@ -66,9 +66,9 @@ public class MainActivity extends Activity {
     private static final String EXTRA_VIDEO_PATH = "video_path";
     private static final int PICK_VIDEO = 1001;
     private static final int TARGET_FPS = 15;
-    private static final int MAX_DURATION_MS = 30_000;
+    private static final int MAX_DURATION_MS = 60_000;
     private static final int MODEL_INPUT_MAX_WIDTH = 640;
-    private static final String CACHE_SCHEMA_VERSION = "pose-fit-v2";
+    private static final String CACHE_SCHEMA_VERSION = "pose-fit-v3-60s-evidence";
     private static final int COLOR_BG = 0xffF7F8F5;
     private static final int COLOR_SURFACE = 0xffffffff;
     private static final int COLOR_TEXT = 0xff161A17;
@@ -102,8 +102,12 @@ public class MainActivity extends Activity {
     private TextView timingValue;
     private TextView chainValue;
     private TextView recoveryValue;
+    private TextView actionLevelValue;
+    private TextView evidenceDetail;
     private LinearLayout timelineStrip;
     private CachedReview currentReview;
+    private StrokeScore selectedStroke;
+    private String expandedEvidenceType = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -138,7 +142,7 @@ public class MainActivity extends Activity {
         ));
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("选择一段羽毛球视频，手机本地完成抽帧、MediaPipe Pose 推理和三项评分。PoC 默认最多处理前 30 秒，15fps 抽样。");
+        subtitle.setText("选择一段羽毛球视频，手机本地完成抽帧、MediaPipe Pose 推理和三项评分。默认最多处理前 60 秒，15fps 抽样。");
         subtitle.setTextSize(14);
         subtitle.setTextColor(0xff68716A);
         subtitle.setPadding(0, dp(8), 0, dp(14));
@@ -232,7 +236,7 @@ public class MainActivity extends Activity {
         selectedFileLabel.setGravity(Gravity.CENTER);
         selectedFileLabel.setPadding(0, dp(6), 0, dp(4));
         uploader.addView(selectedFileLabel);
-        TextView hint = text("建议先用 15-60 秒片段测试；当前端上模式会处理前 30 秒。", 13, 0xffA9C7BB, Typeface.NORMAL);
+        TextView hint = text("建议先用 15-60 秒片段测试；当前端上模式会处理前 60 秒。", 13, 0xffA9C7BB, Typeface.NORMAL);
         hint.setGravity(Gravity.CENTER);
         hint.setPadding(dp(8), 0, dp(8), dp(16));
         uploader.addView(hint);
@@ -315,6 +319,22 @@ public class MainActivity extends Activity {
         scoreRow.addView(chainValue, scorePillParams(dp(8)));
         scoreRow.addView(recoveryValue, scorePillParams(dp(8)));
         statusBar.addView(scoreRow, topMargin(dp(12)));
+        actionLevelValue = text("动作等级参考：--", 15, 0xff93F2C1, Typeface.BOLD);
+        actionLevelValue.setPadding(0, dp(12), 0, 0);
+        statusBar.addView(actionLevelValue);
+
+        LinearLayout evidenceRow = new LinearLayout(this);
+        evidenceRow.setOrientation(LinearLayout.HORIZONTAL);
+        evidenceRow.setGravity(Gravity.CENTER_VERTICAL);
+        evidenceRow.addView(evidenceButton("击球证据", "timing", 0xffF7D76E), scorePillParams(0));
+        evidenceRow.addView(evidenceButton("发力证据", "chain", 0xff75D7FF), scorePillParams(dp(8)));
+        evidenceRow.addView(evidenceButton("回位证据", "recovery", 0xffB9F4CE), scorePillParams(dp(8)));
+        statusBar.addView(evidenceRow, topMargin(dp(12)));
+        evidenceDetail = text("", 14, 0xffD7F8DF, Typeface.NORMAL);
+        evidenceDetail.setLineSpacing(dp(3), 1.0f);
+        evidenceDetail.setPadding(0, dp(10), 0, 0);
+        evidenceDetail.setVisibility(View.GONE);
+        statusBar.addView(evidenceDetail);
         resultCard.addView(statusBar, topMargin(dp(12)));
 
         content.addView(resultCard);
@@ -437,6 +457,23 @@ public class MainActivity extends Activity {
         return params;
     }
 
+    private Button evidenceButton(String label, String type, int accentColor) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(13);
+        button.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        button.setTextColor(accentColor);
+        button.setMinHeight(dp(44));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xff081410);
+        bg.setCornerRadius(dp(8));
+        bg.setStroke(dp(1), accentColor);
+        button.setBackground(bg);
+        button.setOnClickListener(v -> toggleEvidence(type));
+        return button;
+    }
+
     private Button darkButton(String label, boolean primary) {
         Button button = new Button(this);
         button.setText(label);
@@ -490,7 +527,7 @@ public class MainActivity extends Activity {
 
         LinearLayout actionCard = card();
         actionCard.addView(text("开始一次复盘", 20, COLOR_TEXT, Typeface.BOLD));
-        TextView intro = text("选择一段 30 秒内的训练视频，手机会抽帧、识别姿态并输出击球时机、发力链和回位恢复评分。", 14, COLOR_MUTED, Typeface.NORMAL);
+        TextView intro = text("选择一段 60 秒内的训练视频，手机会抽帧、识别姿态并输出击球时机、发力链和回位恢复评分。", 14, COLOR_MUTED, Typeface.NORMAL);
         intro.setLineSpacing(dp(2), 1.0f);
         intro.setPadding(0, dp(8), 0, dp(14));
         actionCard.addView(intro);
@@ -1368,12 +1405,16 @@ public class MainActivity extends Activity {
     }
 
     private void showStrokeStatus(StrokeScore stroke) {
+        selectedStroke = stroke;
+        expandedEvidenceType = "";
         if (stroke == null) {
             strokeStatusTitle.setText("没有检测到重发力窗口");
             strokeStatusTime.setText("建议使用近端球员清晰、身体完整入镜的视频。");
             timingValue.setText("击球时机\n--");
             chainValue.setText("发力链\n--");
             recoveryValue.setText("回位恢复\n--");
+            actionLevelValue.setText("动作等级参考：--");
+            evidenceDetail.setVisibility(View.GONE);
             return;
         }
         strokeStatusTitle.setText("第 " + (stroke.index + 1) + " 次重发力 · " + stroke.side);
@@ -1381,6 +1422,381 @@ public class MainActivity extends Activity {
         timingValue.setText("击球时机\n" + format(stroke.timing));
         chainValue.setText("发力链\n" + format(stroke.chain));
         recoveryValue.setText("回位恢复\n" + format(stroke.recovery));
+        actionLevelValue.setText("动作等级参考：" + stroke.actionLevel + " · 综合 " + format(stroke.overall));
+        evidenceDetail.setVisibility(View.GONE);
+    }
+
+    private void toggleEvidence(String type) {
+        if (selectedStroke == null) {
+            return;
+        }
+        if (type.equals(expandedEvidenceType) && evidenceDetail.getVisibility() == View.VISIBLE) {
+            evidenceDetail.setVisibility(View.GONE);
+            expandedEvidenceType = "";
+            return;
+        }
+        expandedEvidenceType = type;
+        evidenceDetail.setText(buildEvidenceText(selectedStroke, type));
+        evidenceDetail.setVisibility(View.VISIBLE);
+    }
+
+    private String buildEvidenceText(StrokeScore stroke, String type) {
+        if ("timing".equals(type)) {
+            return formatEvidenceReport(buildTimingReport(stroke));
+        }
+        if ("chain".equals(type)) {
+            return formatEvidenceReport(buildChainReport(stroke));
+        }
+        return formatEvidenceReport(buildRecoveryReport(stroke));
+    }
+
+    private EvidenceReport buildTimingReport(StrokeScore stroke) {
+        EvidenceReport report = new EvidenceReport(
+                "击球时机证据",
+                stroke.timing,
+                "这一项看的是击球点是否主动、手臂是否展开、击球前是否已经完成准备。",
+                timingSuggestion(stroke)
+        );
+        report.items.add(new EvidenceItem(
+                "击球点高度",
+                stroke.heightScore,
+                heightInsight(stroke.heightScore),
+                heightAdvice(stroke.heightScore)
+        ));
+        report.items.add(new EvidenceItem(
+                "手臂伸展",
+                stroke.elbowScore,
+                elbowInsight(stroke.elbowScore),
+                elbowAdvice(stroke.elbowScore)
+        ));
+        report.items.add(new EvidenceItem(
+                "提前准备",
+                stroke.prepScore,
+                prepInsight(stroke.prepScore),
+                prepAdvice(stroke.prepScore)
+        ));
+        report.confidenceScore = stroke.confidenceScore;
+        return report;
+    }
+
+    private EvidenceReport buildChainReport(StrokeScore stroke) {
+        EvidenceReport report = new EvidenceReport(
+                "发力链证据",
+                stroke.chain,
+                "这一项看的是身体、手臂、手腕是否形成连续传导，而不是只靠手臂硬打。",
+                chainSuggestion(stroke)
+        );
+        report.items.add(new EvidenceItem(
+                "整体爆发",
+                stroke.energyScore,
+                energyInsight(stroke.energyScore),
+                energyAdvice(stroke.energyScore)
+        ));
+        report.items.add(new EvidenceItem(
+                "发力顺序",
+                stroke.orderScore,
+                orderInsight(stroke.orderScore),
+                orderAdvice(stroke.orderScore)
+        ));
+        report.items.add(new EvidenceItem(
+                "手腕释放",
+                stroke.wristLateScore,
+                wristInsight(stroke.wristLateScore),
+                wristAdvice(stroke.wristLateScore)
+        ));
+        report.items.add(new EvidenceItem(
+                "下肢参与",
+                stroke.kneeLoadScore,
+                kneeInsight(stroke.kneeLoadScore),
+                kneeAdvice(stroke.kneeLoadScore)
+        ));
+        report.confidenceScore = stroke.confidenceScore;
+        return report;
+    }
+
+    private EvidenceReport buildRecoveryReport(StrokeScore stroke) {
+        EvidenceReport report = new EvidenceReport(
+                "回位恢复证据",
+                stroke.recovery,
+                "这一项看的是击球后是否能快速收住动作，并回到可以衔接下一拍的状态。",
+                recoverySuggestion(stroke)
+        );
+        report.items.add(new EvidenceItem(
+                "回位速度",
+                stroke.recoveryTimeScore,
+                recoveryTimeInsight(stroke),
+                recoveryTimeAdvice(stroke)
+        ));
+        report.items.add(new EvidenceItem(
+                "动作收束",
+                stroke.residualScore,
+                residualInsight(stroke.residualScore),
+                residualAdvice(stroke.residualScore)
+        ));
+        report.items.add(new EvidenceItem(
+                "身体回正",
+                stroke.postureScore,
+                postureInsight(stroke.postureScore),
+                postureAdvice(stroke.postureScore)
+        ));
+        report.confidenceScore = stroke.confidenceScore;
+        return report;
+    }
+
+    private String formatEvidenceReport(EvidenceReport report) {
+        StringBuilder out = new StringBuilder();
+        out.append(report.title)
+                .append("\n本项判断: ")
+                .append(gradeLabel(report.score))
+                .append(" · ")
+                .append(overallVerdict(report.score))
+                .append("\n说明: ")
+                .append(report.summary)
+                .append("\n画面可信度: ")
+                .append(confidenceLabel(report.confidenceScore))
+                .append(" · ")
+                .append(confidenceInsight(report.confidenceScore))
+                .append("\n\n证据")
+                .append(formatEvidenceItem(report.items.get(0)));
+        for (int i = 1; i < report.items.size(); i++) {
+            out.append(formatEvidenceItem(report.items.get(i)));
+        }
+        out.append("\n\n训练建议: ").append(report.suggestion);
+        out.append("\n提示: 等级来自端上姿态规则，会受视角、遮挡和球员远近影响，适合做动作复盘参考。");
+        return out.toString();
+    }
+
+    private String formatEvidenceItem(EvidenceItem item) {
+        return "\n- " + item.name + " " + gradeCode(item.score)
+                + ": " + item.insight
+                + " 建议: " + item.advice;
+    }
+
+    private String gradeLabel(double score) {
+        return gradeCode(score) + " 级";
+    }
+
+    private String gradeCode(double score) {
+        if (score >= 88) return "S";
+        if (score >= 78) return "A";
+        if (score >= 65) return "B";
+        if (score >= 50) return "C";
+        return "D";
+    }
+
+    private String overallVerdict(double score) {
+        if (score >= 88) return "表现突出";
+        if (score >= 78) return "质量较好";
+        if (score >= 65) return "基本成立";
+        if (score >= 50) return "需要加强";
+        return "优先修正";
+    }
+
+    private String confidenceLabel(double score) {
+        if (score >= 75) return "高";
+        if (score >= 55) return "中";
+        return "低";
+    }
+
+    private String confidenceInsight(double score) {
+        if (score >= 75) return "关键点比较稳定，本项判断可作为主要参考。";
+        if (score >= 55) return "结果可以参考，但局部遮挡或侧面角度可能改变判断。";
+        return "关键点不够稳定，本项更适合作为提示，不建议当作最终结论。";
+    }
+
+    private String heightInsight(double score) {
+        if (score >= 88) return "击球点很主动，身体有机会在高点完成处理。";
+        if (score >= 78) return "击球点较主动，不太像被球压住的状态。";
+        if (score >= 65) return "击球点基本可用，但还有继续抢高点的空间。";
+        if (score >= 50) return "击球点偏被动，容易让动作变成补救。";
+        return "击球点明显偏被动，通常会影响发力和线路选择。";
+    }
+
+    private String heightAdvice(double score) {
+        if (score >= 78) return "保持提前移动和举拍节奏。";
+        if (score >= 65) return "多练启动后第一时间架拍。";
+        return "先把判断、移动和举拍提前，不急着追求爆发。";
+    }
+
+    private String elbowInsight(double score) {
+        if (score >= 88) return "击球瞬间手臂展开充分，发力空间很好。";
+        if (score >= 78) return "手臂展开较好，能给球拍留出加速空间。";
+        if (score >= 65) return "伸展基本够用，但还可以更舒展。";
+        if (score >= 50) return "手臂展开不足，发力容易被压缩。";
+        return "击球时手臂明显受限，容易只靠局部发力。";
+    }
+
+    private String elbowAdvice(double score) {
+        if (score >= 78) return "继续保持击球前的空间感。";
+        if (score >= 65) return "练习击球前让肘和拍面更早到位。";
+        return "先练放松架拍和迎球，不要等球贴近身体再出手。";
+    }
+
+    private String prepInsight(double score) {
+        if (score >= 88) return "击球前准备很充分，动作有预备节奏。";
+        if (score >= 78) return "击球前已有明显准备，出手不仓促。";
+        if (score >= 65) return "准备动作基本存在，但节奏还可以更早。";
+        if (score >= 50) return "准备偏晚，击球前容易临时补动作。";
+        return "准备不足，动作更像被球带着走。";
+    }
+
+    private String prepAdvice(double score) {
+        if (score >= 78) return "保持分腿垫步后的快速架拍。";
+        if (score >= 65) return "把准备动作提前到对方出球后的第一拍节奏。";
+        return "先做无球的判断、侧身、举拍连贯练习。";
+    }
+
+    private String energyInsight(double score) {
+        if (score >= 88) return "这一拍加速明显，动作有比较强的爆发感。";
+        if (score >= 78) return "整体加速较好，能看到有效发力。";
+        if (score >= 65) return "有发力动作，但爆发还不够集中。";
+        if (score >= 50) return "动作能量偏弱，可能更像过渡处理。";
+        return "加速不明显，发力动作没有完整释放出来。";
+    }
+
+    private String energyAdvice(double score) {
+        if (score >= 78) return "继续保持放松到加速的节奏。";
+        if (score >= 65) return "练习最后一小段集中加速。";
+        return "先练完整挥拍轨迹，再逐步加速度。";
+    }
+
+    private String orderInsight(double score) {
+        if (score >= 88) return "身体到手臂再到手腕的传导很顺。";
+        if (score >= 78) return "发力顺序较清楚，身体参与不是孤立的。";
+        if (score >= 65) return "传导基本成立，但部分环节还不够分明。";
+        if (score >= 50) return "发力顺序偏混在一起，力量传递效率一般。";
+        return "传导顺序不清楚，容易变成手臂单独用力。";
+    }
+
+    private String orderAdvice(double score) {
+        if (score >= 78) return "继续保持先身体、后拍头的节奏。";
+        if (score >= 65) return "用慢动作练蹬转、转体、挥拍的先后关系。";
+        return "先降低速度，拆开下肢、躯干、手臂的发力顺序。";
+    }
+
+    private String wristInsight(double score) {
+        if (score >= 88) return "手腕释放非常贴近击球点，出拍集中。";
+        if (score >= 78) return "手腕释放时机较好，拍头加速比较集中。";
+        if (score >= 65) return "释放时机基本可用，但还可以更贴近击球点。";
+        if (score >= 50) return "释放时机偏散，击球前后加速不够集中。";
+        return "手腕释放和击球点错开，力量容易漏掉。";
+    }
+
+    private String wristAdvice(double score) {
+        if (score >= 78) return "保持放松握拍，最后一瞬间再加速。";
+        if (score >= 65) return "练习击球前放松、触球瞬间集中发力。";
+        return "先减少提前甩腕，找准触球瞬间的拍头加速。";
+    }
+
+    private String kneeInsight(double score) {
+        if (score >= 88) return "下肢加载充分，身体参与感很强。";
+        if (score >= 78) return "下肢参与较明显，发力有身体支撑。";
+        if (score >= 65) return "有一定下肢参与，但主动性还可以更强。";
+        if (score >= 50) return "下肢参与偏少，更多依赖上肢完成动作。";
+        return "下肢加载不足，身体没有很好地给挥拍供力。";
+    }
+
+    private String kneeAdvice(double score) {
+        if (score >= 78) return "继续保持击球前的蹬转节奏。";
+        if (score >= 65) return "练习击球前压重心和蹬地启动。";
+        return "先练脚下到位、降重心、蹬转带拍。";
+    }
+
+    private String recoveryTimeInsight(StrokeScore stroke) {
+        if (!stroke.stableFrameFound) {
+            return "击球后没有很快进入稳定状态，衔接下一拍会吃亏。";
+        }
+        if (stroke.recoveryTimeScore >= 88) return "击球后很快稳定，衔接意识很好。";
+        if (stroke.recoveryTimeScore >= 78) return "回位速度较好，能比较快重新准备。";
+        if (stroke.recoveryTimeScore >= 65) return "恢复基本可用，但还有压缩停顿的空间。";
+        if (stroke.recoveryTimeScore >= 50) return "恢复偏慢，下一拍准备容易晚。";
+        return "恢复明显偏慢，动作完成后容易停在原地。";
+    }
+
+    private String recoveryTimeAdvice(StrokeScore stroke) {
+        if (stroke.recoveryTimeScore >= 78) return "保持打完后马上找下一拍。";
+        if (stroke.recoveryTimeScore >= 65) return "缩短随挥后的停顿，脚下保持小调整。";
+        return "先练打完即收拍、回中、举拍的固定节奏。";
+    }
+
+    private String residualInsight(double score) {
+        if (score >= 88) return "随挥后动作很干净，身体控制好。";
+        if (score >= 78) return "多余摆动较少，动作能收住。";
+        if (score >= 65) return "动作收束基本可用，但还有残余摆动。";
+        if (score >= 50) return "随挥后身体仍在摆动，影响重新启动。";
+        return "多余动作偏大，击球后的身体控制不足。";
+    }
+
+    private String residualAdvice(double score) {
+        if (score >= 78) return "继续保持发力后收住重心。";
+        if (score >= 65) return "练习随挥结束后立刻回到准备姿态。";
+        return "减少打完后的大幅摆动，先把重心稳住。";
+    }
+
+    private String postureInsight(double score) {
+        if (score >= 88) return "身体回正很快，准备姿态恢复好。";
+        if (score >= 78) return "肩髋能较快回正，下一拍准备不错。";
+        if (score >= 65) return "身体有回正趋势，但还不够干净。";
+        if (score >= 50) return "身体回正偏慢，容易影响下一拍启动方向。";
+        return "身体姿态恢复不足，击球后容易散掉。";
+    }
+
+    private String postureAdvice(double score) {
+        if (score >= 78) return "保持击球后面向来球方向的准备姿态。";
+        if (score >= 65) return "打完后主动收拍、降重心、调整朝向。";
+        return "先练每拍结束都回到中立准备姿态。";
+    }
+
+    private String timingSuggestion(StrokeScore stroke) {
+        if (stroke.timing >= 78) return "继续保持提前准备，把主动击球点稳定下来。";
+        if (stroke.heightScore < stroke.prepScore) return "优先把移动和架拍提前，争取在更主动的位置触球。";
+        if (stroke.prepScore < stroke.elbowScore) return "优先练击球前准备，不要等球到身前才启动。";
+        return "先把击球前的空间和节奏做出来，再追求更强发力。";
+    }
+
+    private String chainSuggestion(StrokeScore stroke) {
+        if (stroke.chain >= 78) return "发力链质量不错，下一步可以追求更稳定的连续多拍输出。";
+        if (stroke.kneeLoadScore < 60) return "优先加强下肢加载，让蹬转先于手臂发力。";
+        if (stroke.orderScore < 60) return "优先拆开发力顺序，用慢动作练身体带动拍头。";
+        if (stroke.wristLateScore < 60) return "优先把手腕释放集中到触球瞬间。";
+        return "保留完整挥拍轨迹，同时提升最后一段加速。";
+    }
+
+    private String recoverySuggestion(StrokeScore stroke) {
+        if (stroke.recovery >= 78) return "恢复质量较好，可以继续追求更快衔接下一拍。";
+        if (!stroke.stableFrameFound || stroke.recoveryTimeScore < 60) return "优先练打完马上回中和举拍，减少击球后的停顿。";
+        if (stroke.residualScore < 60) return "优先减少随挥后的多余摆动，把身体收住。";
+        return "优先让肩髋和重心更快回到准备姿态。";
+    }
+
+    private static final class EvidenceReport {
+        final String title;
+        final double score;
+        final String summary;
+        final String suggestion;
+        final List<EvidenceItem> items = new ArrayList<>();
+        double confidenceScore;
+
+        EvidenceReport(String title, double score, String summary, String suggestion) {
+            this.title = title;
+            this.score = score;
+            this.summary = summary;
+            this.suggestion = suggestion;
+        }
+    }
+
+    private static final class EvidenceItem {
+        final String name;
+        final double score;
+        final String insight;
+        final String advice;
+
+        EvidenceItem(String name, double score, String insight, String advice) {
+            this.name = name;
+            this.score = score;
+            this.insight = insight;
+            this.advice = advice;
+        }
     }
 
     private String buildScoreSummary(ReviewSummary summary) {
@@ -1475,7 +1891,7 @@ public class MainActivity extends Activity {
         builder.append("视频信息: ")
                 .append(width).append("x").append(height)
                 .append(", ").append(format(durationMs / 1000.0)).append("s\n");
-        builder.append("处理设置: 最多 30s, ").append(TARGET_FPS).append("fps 抽样\n");
+        builder.append("处理设置: 最多 60s, ").append(TARGET_FPS).append("fps 抽样\n");
         builder.append("模型输入: ").append(scaledWidth).append("x").append(scaledHeight).append("\n");
         builder.append("端上耗时: ").append(format(elapsedMs / 1000.0)).append("s\n");
         builder.append("耗时拆分: decode=").append(format(decodeMs / 1000.0))
@@ -2061,7 +2477,7 @@ public class MainActivity extends Activity {
     }
 
     private static final class StrokeScore implements Serializable {
-        private static final long serialVersionUID = 1L;
+        private static final long serialVersionUID = 2L;
         int index;
         int frame;
         double timeSec;
@@ -2069,6 +2485,33 @@ public class MainActivity extends Activity {
         double timing;
         double chain;
         double recovery;
+        double overall;
+        String actionLevel;
+        double heightScore;
+        double elbowScore;
+        double prepScore;
+        double confidenceScore;
+        double maxHeightRatio;
+        double contactHeightRatio;
+        double elbowAngle;
+        double prepHeightRatio;
+        double twistScore;
+        double energyScore;
+        double orderScore;
+        double wristLateScore;
+        double kneeLoadScore;
+        double legEnergy;
+        double trunkEnergy;
+        double elbowEnergy;
+        double wristEnergy;
+        double kneeLoad;
+        double recoverySeconds;
+        double recoveryTimeScore;
+        double residualScore;
+        double postureScore;
+        double recoveryMedianSpeed;
+        double recoveryMedianTwist;
+        boolean stableFrameFound;
     }
 
     private static final class ReviewSummary implements Serializable {
@@ -2226,8 +2669,10 @@ public class MainActivity extends Activity {
             }
             double recoverySeconds = stableFrame == null ? (recoverEnd - eventIdx) / Math.max(fps, 1.0) : Math.max(0.0, (stableFrame - eventIdx) / Math.max(fps, 1.0));
             double recoveryTimeScore = stableFrame == null ? 32.0 : scoreRange(recoverySeconds, 1.20, 0.28);
-            double residualScore = scoreRange(medianD(recover, "normalizedWristSpeed", 1.2), 1.70, 0.35);
-            double postureScore = scoreRange(medianD(recover, "twist", 16.0), 26.0, 5.0);
+            double recoveryMedianSpeed = medianD(recover, "normalizedWristSpeed", 1.2);
+            double recoveryMedianTwist = medianD(recover, "twist", 16.0);
+            double residualScore = scoreRange(recoveryMedianSpeed, 1.70, 0.35);
+            double postureScore = scoreRange(recoveryMedianTwist, 26.0, 5.0);
             double recovery = clamp(0.54 * recoveryTimeScore + 0.28 * residualScore + 0.18 * postureScore);
 
             StrokeScore stroke = new StrokeScore();
@@ -2237,7 +2682,48 @@ public class MainActivity extends Activity {
             stroke.timing = timing;
             stroke.chain = chain;
             stroke.recovery = recovery;
+            stroke.overall = actionOverall(timing, chain, recovery);
+            stroke.actionLevel = actionLevel(stroke.overall);
+            stroke.heightScore = heightScore;
+            stroke.elbowScore = elbowScore;
+            stroke.prepScore = prepScore;
+            stroke.confidenceScore = confidenceScore;
+            stroke.maxHeightRatio = maxHeightRatio;
+            stroke.contactHeightRatio = contactHeightRatio;
+            stroke.elbowAngle = safe(contact.elbowAngle, 0.0);
+            stroke.prepHeightRatio = prepHeightRatio;
+            stroke.twistScore = twistScore;
+            stroke.energyScore = energyScore;
+            stroke.orderScore = orderScore;
+            stroke.wristLateScore = wristLate;
+            stroke.kneeLoadScore = kneeLoadScore;
+            stroke.legEnergy = legEnergy;
+            stroke.trunkEnergy = trunkEnergy;
+            stroke.elbowEnergy = elbowEnergy;
+            stroke.wristEnergy = wristEnergy;
+            stroke.kneeLoad = kneeLoad;
+            stroke.recoverySeconds = recoverySeconds;
+            stroke.recoveryTimeScore = recoveryTimeScore;
+            stroke.residualScore = residualScore;
+            stroke.postureScore = postureScore;
+            stroke.recoveryMedianSpeed = recoveryMedianSpeed;
+            stroke.recoveryMedianTwist = recoveryMedianTwist;
+            stroke.stableFrameFound = stableFrame != null;
             return stroke;
+        }
+
+        private static double actionOverall(double timing, double chain, double recovery) {
+            return clamp(0.35 * timing + 0.40 * chain + 0.25 * recovery);
+        }
+
+        private static String actionLevel(double score) {
+            if (score < 40) return "中羽1级以下动作参考";
+            if (score < 50) return "中羽1级动作参考";
+            if (score < 60) return "中羽2级动作参考";
+            if (score < 70) return "中羽3级动作参考";
+            if (score < 80) return "中羽4级动作参考";
+            if (score < 88) return "中羽5级动作参考";
+            return "中羽6级+动作参考";
         }
 
         private static List<Integer> robustEvents(double[] values, double fps, int limit) {
