@@ -4,12 +4,12 @@ import subprocess
 from pathlib import Path
 
 import cv2
-import mediapipe as mp
+from mediapipe.python.solutions import hands, holistic, pose
 import numpy as np
 
 
-POSE_CONNECTIONS = list(mp.solutions.pose.POSE_CONNECTIONS)
-HAND_CONNECTIONS = list(mp.solutions.hands.HAND_CONNECTIONS)
+POSE_CONNECTIONS = list(pose.POSE_CONNECTIONS)
+HAND_CONNECTIONS = list(hands.HAND_CONNECTIONS)
 
 
 def lm_to_px(landmark, width, height):
@@ -166,7 +166,7 @@ def main():
 
     import time
     started = time.time()
-    with mp.solutions.holistic.Holistic(
+    with holistic.Holistic(
         static_image_mode=False,
         model_complexity=args.model_complexity,
         smooth_landmarks=True,
